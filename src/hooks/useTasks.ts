@@ -1,14 +1,22 @@
 'use client';
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { Task } from '@/types/task';
 import { useMemo } from 'react';
 
-const API_URL = 'http://localhost:3001/tasks';
+/**
+ * 
+ * Switches between local json-server and Next.js API to can deployment.
+ */
+const API_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
+  ? 'http://localhost:3001/tasks' 
+  : '/api/tasks';
 
 export const useTasks = (searchQuery: string = '') => {
   const queryClient = useQueryClient();
 
+  // Fetching all tasks with React Query
   const { data, isLoading } = useQuery<Task[]>({
     queryKey: ['tasks'],
     queryFn: async () => {
@@ -17,99 +25,102 @@ export const useTasks = (searchQuery: string = '') => {
     },
   });
 
+  // Optimized client-side filtering for 1ms request  
   const filteredTasks = useMemo(() => {
     if (!data) return [];
-    let results = data.filter(task => 
+    const results = data.filter(task => 
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       task.description?.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    return [...results].reverse(); 
+    return [...results].reverse(); // Show newest tasks first
   }, [data, searchQuery]);
 
-  //  Optimized Mutation for Drag & Drop 
-  const updateTask = useMutation({
-    mutationFn: (updated: Task) => axios.put(`${API_URL}/${updated.id}`, updated),
-    
-    // Step 1: When mutate is called
-    onMutate: async (updatedTask) => {
-      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
-      await queryClient.cancelQueries({ queryKey: ['tasks'] });
 
-      // Snapshot the previous value for rollback if things go south
+  // CREATE Task with Optimistic UI
+  const createTask = useMutation({
+    mutationFn: (newTask: Omit<Task, 'id'>) => axios.post(API_URL, newTask),
+    
+    onMutate: async (newTask) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks'] });
       const previousTasks = queryClient.getQueryData<Task[]>(['tasks']);
 
-      // Optimistically update the cache immediately
+      // Create a temporary task object to show snap shot 
+      const optimisticTask = { 
+        ...newTask, 
+        id: Math.random().toString(36).substring(2, 9) // Temporary ID
+      };
+
       queryClient.setQueryData(['tasks'], (old: Task[] | undefined) => {
-        if (!old) return [];
-        return old.map((t) => (t.id === updatedTask.id ? { ...t, ...updatedTask } : t));
+        return old ? [optimisticTask, ...old] : [optimisticTask];
       });
 
-      // Return context object with the snapshotted value
       return { previousTasks };
     },
-
-    // Step 2: If the mutation fails, use the context we returned above
-    onError: (err, updatedTask, context) => {
+    onError: (err, newTask, context) => {
       if (context?.previousTasks) {
         queryClient.setQueryData(['tasks'], context.previousTasks);
-        console.error("Rollback triggered due to API error:", err);
       }
     },
-
-    // Step 3: Always refetch after error or success to keep server/client in sync
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
   });
 
-  // --- Standard Mutations (Create/Delete) ---
-  const createTask = useMutation({
-    mutationFn: (newTask: Omit<Task, 'id'>) => axios.post(API_URL, newTask),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+  // UPDATE Task (Handles Drag & Drop + Editing) with Optimistic UI
+  const updateTask = useMutation({
+    mutationFn: (updated: Task) => axios.put(`${API_URL}/${updated.id}`, updated),
+    
+    onMutate: async (updatedTask) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks'] });
+      const previousTasks = queryClient.getQueryData<Task[]>(['tasks']);
+
+      queryClient.setQueryData(['tasks'], (old: Task[] | undefined) => {
+        if (!old) return [];
+        return old.map((t) => (t.id === updatedTask.id ? { ...t, ...updatedTask } : t));
+      });
+
+      return { previousTasks };
+    },
+    onError: (err, updatedTask, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(['tasks'], context.previousTasks);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
   });
 
-  // Inside useTasks hook
+  // DELETE Task with Optimistic UI
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => axios.delete(`${API_URL}/${id}`),
 
-const deleteTask = useMutation({
-  mutationFn: (id: string) => axios.delete(`${API_URL}/${id}`),
+    onMutate: async (deletedId) => {
+      await queryClient.cancelQueries({ queryKey: ['tasks'] });
+      const previousTasks = queryClient.getQueryData<Task[]>(['tasks']);
 
-  // 1. Instant Feedback: Remove the task from UI immediately
-  onMutate: async (deletedId) => {
-    // Cancel ongoing fetches to prevent data sync issues
-    await queryClient.cancelQueries({ queryKey: ['tasks'] });
+      queryClient.setQueryData(['tasks'], (old: Task[] | undefined) => {
+        if (!old) return [];
+        return old.filter((task) => task.id !== deletedId);
+      });
 
-    // Snapshot the current state before deletion
-    const previousTasks = queryClient.getQueryData<Task[]>(['tasks']);
-
-    // Optimistically update the cache: Filter out the deleted task
-    queryClient.setQueryData(['tasks'], (old: Task[] | undefined) => {
-      if (!old) return [];
-      return old.filter((task) => task.id !== deletedId);
-    });
-
-    // Return the snapshot for potential rollback
-    return { previousTasks };
-  },
-
-  // 2. Error Handling: If the server fails to delete, bring the task back
-  onError: (err, deletedId, context) => {
-    if (context?.previousTasks) {
-      queryClient.setQueryData(['tasks'], context.previousTasks);
-      console.error("Delete failed, task restored:", err);
-    }
-  },
-
-  // 3. Final Sync: Ensure client and server are perfectly aligned
-  onSettled: () => {
-    queryClient.invalidateQueries({ queryKey: ['tasks'] });
-  },
-});
+      return { previousTasks };
+    },
+    onError: (err, deletedId, context) => {
+      if (context?.previousTasks) {
+        queryClient.setQueryData(['tasks'], context.previousTasks);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
 
   return {
     allTasks: filteredTasks,
     isLoading,
     createTask: createTask.mutateAsync,
-    updateTask: updateTask.mutateAsync, // Now lightning fast
+    updateTask: updateTask.mutateAsync,
     deleteTask: deleteTask.mutate,
   };
 };

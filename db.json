@@ -25,12 +25,6 @@
       "column": "review"
     },
     {
-      "title": "Mega",
-      "description": "da",
-      "column": "in_progress",
-      "id": "x98PlMvCYY0"
-    },
-    {
       "title": "Marina",
       "description": "Hello",
       "column": "review",
@@ -39,8 +33,14 @@
     {
       "title": "sd",
       "description": "d",
-      "column": "in_progress",
+      "column": "done",
       "id": "jQePxg6QjFY"
+    },
+    {
+      "title": "Mega",
+      "description": "Tron",
+      "column": "in_progress",
+      "id": "tbeJCqwiP74"
     }
   ],
   "$schema": "./node_modules/json-server/schema.json"
