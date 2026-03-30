@@ -9,6 +9,18 @@
  State-of-the-art Stack: Built on Next.js 16 (App Router) and React 19, styled with Material UI (v7) and customized with a premium dark-themed aesthetic.
  Scalable Architecture:Custom Hooks: Logic encapsulation via useTasks hook for clean separation of concerns.
  Isolated Pagination: Independent pagination state for each column to handle large datasets efficiently.Real-time Search: Instant filtering of tasks by title or description using optimized useMemo logic.
+ /**
+ * ENVIRONMENT-AWARE API CONFIGURATION
+ * * Logic:
+ * 1. During Local Development (localhost): 
+ * The app communicates with the requested 'json-server' running on port 3001.
+ * * 2. During Production (Vercel/Live): 
+ * Since json-server cannot persist data in serverless environments, 
+ * the app automatically switches to the built-in Next.js API Route Handlers (/api/tasks).
+ */
+const API_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
+  ? 'http://localhost:3001/tasks' 
+  : '/api/tasks';
  🛠 Tech Stack:
  Framework: Next.js 16 (App Router) / TypeScript.
  State/Data: TanStack Query v5 / Axios.
